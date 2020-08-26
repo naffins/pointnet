@@ -224,7 +224,7 @@ def conv2d_transpose(inputs,
             dim_size += max(kernel_size - stride_size, 0)
           return dim_size
 
-      # caculate output shape
+      # calcuate output shape
       batch_size = inputs.get_shape()[0].value
       height = inputs.get_shape()[1].value
       width = inputs.get_shape()[2].value

@@ -29,31 +29,35 @@ point_num = FLAGS.point_num
 batch_size = FLAGS.batch
 output_dir = FLAGS.output_dir
 
+# Create output_dir if it doesn't exist yet
 if not os.path.exists(output_dir):
     os.mkdir(output_dir)
 
 color_map_file = os.path.join(hdf5_data_dir, 'part_color_mapping.json')
-color_map = json.load(open(color_map_file, 'r'))
+color_map = json.load(open(color_map_file, 'r')) #?
 
 all_obj_cats_file = os.path.join(hdf5_data_dir, 'all_object_categories.txt')
 fin = open(all_obj_cats_file, 'r')
 lines = [line.rstrip() for line in fin.readlines()]
-all_obj_cats = [(line.split()[0], line.split()[1]) for line in lines]
+all_obj_cats = [(line.split()[0], line.split()[1]) for line in lines] # Name + ID
 fin.close()
 
-all_cats = json.load(open(os.path.join(hdf5_data_dir, 'overallid_to_catid_partid.json'), 'r'))
+all_cats = json.load(open(os.path.join(hdf5_data_dir, 'overallid_to_catid_partid.json'), 'r')) # Map ID to cat number (not one-to-one)
 NUM_CATEGORIES = 16
-NUM_PART_CATS = len(all_cats)
+NUM_PART_CATS = len(all_cats) # 6
 
 print('#### Batch Size: {0}'.format(batch_size))
 print('#### Point Number: {0}'.format(point_num))
 print('#### Training using GPU: {0}'.format(FLAGS.gpu))
 
+# LR Decay
 DECAY_STEP = 16881 * 20
 DECAY_RATE = 0.5
 
+# Perhaps we can customise parameters here for own model
 LEARNING_RATE_CLIP = 1e-5
 
+# Batch normalisation decay
 BN_INIT_DECAY = 0.5
 BN_DECAY_DECAY_RATE = 0.5
 BN_DECAY_DECAY_STEP = float(DECAY_STEP * 2)
@@ -67,14 +71,17 @@ print('### Training epoch: {0}'.format(TRAINING_EPOCHES))
 TRAINING_FILE_LIST = os.path.join(hdf5_data_dir, 'train_hdf5_file_list.txt')
 TESTING_FILE_LIST = os.path.join(hdf5_data_dir, 'val_hdf5_file_list.txt')
 
+# For checkpoints?
 MODEL_STORAGE_PATH = os.path.join(output_dir, 'trained_models')
 if not os.path.exists(MODEL_STORAGE_PATH):
     os.mkdir(MODEL_STORAGE_PATH)
 
+# Logs directory
 LOG_STORAGE_PATH = os.path.join(output_dir, 'logs')
 if not os.path.exists(LOG_STORAGE_PATH):
     os.mkdir(LOG_STORAGE_PATH)
 
+# TF Summaries folder
 SUMMARIES_FOLDER =  os.path.join(output_dir, 'summaries')
 if not os.path.exists(SUMMARIES_FOLDER):
     os.mkdir(SUMMARIES_FOLDER)
@@ -85,8 +92,8 @@ def printout(flog, data):
 
 def placeholder_inputs():
     pointclouds_ph = tf.placeholder(tf.float32, shape=(batch_size, point_num, 3))
-    input_label_ph = tf.placeholder(tf.float32, shape=(batch_size, NUM_CATEGORIES))
-    labels_ph = tf.placeholder(tf.int32, shape=(batch_size))
+    input_label_ph = tf.placeholder(tf.float32, shape=(batch_size, NUM_CATEGORIES)) # This is for one-hot encoding
+    labels_ph = tf.placeholder(tf.int32, shape=(batch_size)) # What's this (and seg_ph)?
     seg_ph = tf.placeholder(tf.int32, shape=(batch_size, point_num))
     return pointclouds_ph, input_label_ph, labels_ph, seg_ph
 
@@ -103,6 +110,7 @@ def train():
             is_training_ph = tf.placeholder(tf.bool, shape=())
 
             batch = tf.Variable(0, trainable=False)
+            # Calculation for learning rate (with decay)
             learning_rate = tf.train.exponential_decay(
                             BASE_LEARNING_RATE,     # base learning rate
                             batch * batch_size,     # global_var indicating the number of steps
@@ -110,8 +118,9 @@ def train():
                             DECAY_RATE,             # decay rate
                             staircase=True          # Stair-case or continuous decreasing
                             )
-            learning_rate = tf.maximum(learning_rate, LEARNING_RATE_CLIP)
+            learning_rate = tf.maximum(learning_rate, LEARNING_RATE_CLIP) # Why maximum?
         
+            # BN decay
             bn_momentum = tf.train.exponential_decay(
                       BN_INIT_DECAY,
                       batch*batch_size,
@@ -255,6 +264,7 @@ def train():
                 total_label_acc = total_label_acc * 1.0 / num_batch
                 total_seg_acc = total_seg_acc * 1.0 / num_batch
 
+                # Getting statistics (backprop is alrdy done by this point)
                 lr_sum, bn_decay_sum, batch_sum, train_loss_sum, train_label_acc_sum, \
                         train_label_loss_sum, train_seg_loss_sum, train_seg_acc_sum = sess.run(\
                         [lr_op, bn_decay_op, batch_op, total_train_loss_sum_op, label_train_acc_sum_op, \
@@ -338,7 +348,7 @@ def train():
                         total_label_acc_per_cat[cur_labels[shape_idx]] += np.int32(per_instance_label_pred[shape_idx-begidx] == cur_labels[shape_idx])
                         total_seg_acc_per_cat[cur_labels[shape_idx]] += per_instance_part_acc[shape_idx - begidx]
 
-            total_loss = total_loss * 1.0 / total_seen
+            total_loss = total_loss * 1.0 / total_seen # This one is different from the training one: the training one is for a file, while this is across entire test set
             total_label_loss = total_label_loss * 1.0 / total_seen
             total_seg_loss = total_seg_loss * 1.0 / total_seen
             total_label_acc = total_label_acc * 1.0 / total_seen

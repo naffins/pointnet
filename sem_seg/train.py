@@ -16,6 +16,7 @@ import provider
 import tf_util
 from model import *
 
+# Define, accept and parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
@@ -30,7 +31,7 @@ parser.add_argument('--decay_rate', type=float, default=0.5, help='Decay rate fo
 parser.add_argument('--test_area', type=int, default=6, help='Which area to use for test, option: 1-6 [default: 6]')
 FLAGS = parser.parse_args()
 
-
+# Declare constants
 BATCH_SIZE = FLAGS.batch_size
 NUM_POINT = FLAGS.num_point
 MAX_EPOCH = FLAGS.max_epoch
@@ -42,6 +43,7 @@ OPTIMIZER = FLAGS.optimizer
 DECAY_STEP = FLAGS.decay_step
 DECAY_RATE = FLAGS.decay_rate
 
+# Create and set logging directory
 LOG_DIR = FLAGS.log_dir
 if not os.path.exists(LOG_DIR): os.mkdir(LOG_DIR)
 os.system('cp model.py %s' % (LOG_DIR)) # bkp of model def
@@ -49,9 +51,11 @@ os.system('cp train.py %s' % (LOG_DIR)) # bkp of train procedure
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
 LOG_FOUT.write(str(FLAGS)+'\n')
 
+# Set max number of points and number of classes (but the former seems to be unused)
 MAX_NUM_POINT = 4096
 NUM_CLASSES = 13
 
+# Define LR decay properties
 BN_INIT_DECAY = 0.5
 BN_DECAY_DECAY_RATE = 0.5
 #BN_DECAY_DECAY_STEP = float(DECAY_STEP * 2)
@@ -60,17 +64,17 @@ BN_DECAY_CLIP = 0.99
 
 HOSTNAME = socket.gethostname()
 
-ALL_FILES = provider.getDataFiles('indoor3d_sem_seg_hdf5_data/all_files.txt')
-room_filelist = [line.rstrip() for line in open('indoor3d_sem_seg_hdf5_data/room_filelist.txt')]
+ALL_FILES = provider.getDataFiles('indoor3d_sem_seg_hdf5_data/all_files.txt') # filename list
+room_filelist = [line.rstrip() for line in open('indoor3d_sem_seg_hdf5_data/room_filelist.txt')] # room names (for train/test sorting)
 
-# Load ALL data
+# Load data and labels from ALL_FILES
 data_batch_list = []
 label_batch_list = []
 for h5_filename in ALL_FILES:
     data_batch, label_batch = provider.loadDataFile(h5_filename)
     data_batch_list.append(data_batch)
     label_batch_list.append(label_batch)
-data_batches = np.concatenate(data_batch_list, 0)
+data_batches = np.concatenate(data_batch_list, 0) # fuse along axis 0
 label_batches = np.concatenate(label_batch_list, 0)
 print(data_batches.shape)
 print(label_batches.shape)
@@ -99,7 +103,7 @@ def log_string(out_str):
     LOG_FOUT.flush()
     print(out_str)
 
-
+# Get current learning rate (with staircase exponent)
 def get_learning_rate(batch):
     learning_rate = tf.train.exponential_decay(
                         BASE_LEARNING_RATE,  # Base learning rate.
@@ -107,9 +111,10 @@ def get_learning_rate(batch):
                         DECAY_STEP,          # Decay step.
                         DECAY_RATE,          # Decay rate.
                         staircase=True)
-    learning_rate = tf.maximum(learning_rate, 0.00001) # CLIP THE LEARNING RATE!!
+    learning_rate = tf.maximum(learning_rate, 0.00001) # CLIP THE LEARNING RATE!! But why maximum?
     return learning_rate        
 
+# Get current batch normalisation
 def get_bn_decay(batch):
     bn_momentum = tf.train.exponential_decay(
                       BN_INIT_DECAY,
@@ -123,7 +128,7 @@ def get_bn_decay(batch):
 def train():
     with tf.Graph().as_default():
         with tf.device('/gpu:'+str(GPU_INDEX)):
-            pointclouds_pl, labels_pl = placeholder_inputs(BATCH_SIZE, NUM_POINT)
+            pointclouds_pl, labels_pl = placeholder_inputs(BATCH_SIZE, NUM_POINT) # size: batch_size x num_points x 9 (see model.py in same folder)
             is_training_pl = tf.placeholder(tf.bool, shape=())
             
             # Note the global_step=batch parameter to minimize. 
@@ -133,8 +138,8 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
 
             # Get model and loss 
-            pred = get_model(pointclouds_pl, is_training_pl, bn_decay=bn_decay)
-            loss = get_loss(pred, labels_pl)
+            pred = get_model(pointclouds_pl, is_training_pl, bn_decay=bn_decay) # (see model.py in same folder)
+            loss = get_loss(pred, labels_pl) # Is it just me, or is the PointNet paper spouting BS when it comes to this model's architecture? Where are the transform layers?
             tf.summary.scalar('loss', loss)
 
             correct = tf.equal(tf.argmax(pred, 2), tf.to_int64(labels_pl))
@@ -148,7 +153,7 @@ def train():
                 optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=MOMENTUM)
             elif OPTIMIZER == 'adam':
                 optimizer = tf.train.AdamOptimizer(learning_rate)
-            train_op = optimizer.minimize(loss, global_step=batch)
+            train_op = optimizer.minimize(loss, global_step=batch) # Backpropagation op. This also increments batch by 1
             
             # Add ops to save and restore all the variables.
             saver = tf.train.Saver()
@@ -170,6 +175,7 @@ def train():
         init = tf.global_variables_initializer()
         sess.run(init, {is_training_pl:True})
 
+        # Dict for mapping to variables (think aliasing)
         ops = {'pointclouds_pl': pointclouds_pl,
                'labels_pl': labels_pl,
                'is_training_pl': is_training_pl,
@@ -197,10 +203,11 @@ def train_one_epoch(sess, ops, train_writer):
     """ ops: dict mapping from string to tf ops """
     is_training = True
     
+    # Shuffle data
     log_string('----')
     current_data, current_label, _ = provider.shuffle_data(train_data[:,0:NUM_POINT,:], train_label) 
     
-    file_size = current_data.shape[0]
+    file_size = current_data.shape[0] # Number of samples
     num_batches = file_size // BATCH_SIZE
     
     total_correct = 0
@@ -266,7 +273,7 @@ def eval_one_epoch(sess, ops, test_writer):
                 total_seen_class[l] += 1
                 total_correct_class[l] += (pred_val[i-start_idx, j] == l)
             
-    log_string('eval mean loss: %f' % (loss_sum / float(total_seen/NUM_POINT)))
+    log_string('eval mean loss: %f' % (loss_sum / float(total_seen/NUM_POINT))) # same as in train
     log_string('eval accuracy: %f'% (total_correct / float(total_seen)))
     log_string('eval avg class acc: %f' % (np.mean(np.array(total_correct_class)/np.array(total_seen_class,dtype=np.float))))
          

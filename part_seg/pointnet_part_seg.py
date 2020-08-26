@@ -80,15 +80,15 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
     with tf.variable_scope('transform_net1') as sc:
         K = 3
         transform = get_transform(point_cloud, is_training, bn_decay, K = 3)
-    point_cloud_transformed = tf.matmul(point_cloud, transform)
+    point_cloud_transformed = tf.matmul(point_cloud, transform) # BxNx3
 
-    input_image = tf.expand_dims(point_cloud_transformed, -1)
+    input_image = tf.expand_dims(point_cloud_transformed, -1) # BxNx3x1
     out1 = tf_util.conv2d(input_image, 64, [1,K], padding='VALID', stride=[1,1],
-                         bn=True, is_training=is_training, scope='conv1', bn_decay=bn_decay)
+                         bn=True, is_training=is_training, scope='conv1', bn_decay=bn_decay) # BxNx1x64
     out2 = tf_util.conv2d(out1, 128, [1,1], padding='VALID', stride=[1,1],
-                         bn=True, is_training=is_training, scope='conv2', bn_decay=bn_decay)
+                         bn=True, is_training=is_training, scope='conv2', bn_decay=bn_decay) # BxNx1x128
     out3 = tf_util.conv2d(out2, 128, [1,1], padding='VALID', stride=[1,1],
-                         bn=True, is_training=is_training, scope='conv3', bn_decay=bn_decay)
+                         bn=True, is_training=is_training, scope='conv3', bn_decay=bn_decay) # BxNx1x128
 
 
     with tf.variable_scope('transform_net2') as sc:
@@ -99,26 +99,26 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
 
     squeezed_out3 = tf.reshape(out3, [batch_size, num_point, 128])
     net_transformed = tf.matmul(squeezed_out3, transform)
-    net_transformed = tf.expand_dims(net_transformed, [2])
+    net_transformed = tf.expand_dims(net_transformed, [2]) #BxNx1x128
 
     out4 = tf_util.conv2d(net_transformed, 512, [1,1], padding='VALID', stride=[1,1],
                          bn=True, is_training=is_training, scope='conv4', bn_decay=bn_decay)
     out5 = tf_util.conv2d(out4, 2048, [1,1], padding='VALID', stride=[1,1],
-                         bn=True, is_training=is_training, scope='conv5', bn_decay=bn_decay)
-    out_max = tf_util.max_pool2d(out5, [num_point,1], padding='VALID', scope='maxpool')
+                         bn=True, is_training=is_training, scope='conv5', bn_decay=bn_decay) # BxNx1x2048
+    out_max = tf_util.max_pool2d(out5, [num_point,1], padding='VALID', scope='maxpool') # Bx1x1x2048
 
     # classification network
-    net = tf.reshape(out_max, [batch_size, -1])
-    net = tf_util.fully_connected(net, 256, bn=True, is_training=is_training, scope='cla/fc1', bn_decay=bn_decay)
+    net = tf.reshape(out_max, [batch_size, -1]) # Bx2048
+    net = tf_util.fully_connected(net, 256, bn=True, is_training=is_training, scope='cla/fc1', bn_decay=bn_decay) # Bx256
     net = tf_util.fully_connected(net, 256, bn=True, is_training=is_training, scope='cla/fc2', bn_decay=bn_decay)
     net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training, scope='cla/dp1')
     net = tf_util.fully_connected(net, cat_num, activation_fn=None, scope='cla/fc3')
 
     # segmentation network
-    one_hot_label_expand = tf.reshape(input_label, [batch_size, 1, 1, cat_num])
+    one_hot_label_expand = tf.reshape(input_label, [batch_size, 1, 1, cat_num]) # BxCat_num -> Bx1x1xCat_num
     out_max = tf.concat(axis=3, values=[out_max, one_hot_label_expand])
 
-    expand = tf.tile(out_max, [1, num_point, 1, 1])
+    expand = tf.tile(out_max, [1, num_point, 1, 1]) # output: BxNx1x(2048+Cat_num)
     concat = tf.concat(axis=3, values=[expand, out1, out2, out3, out4, out5])
 
     net2 = tf_util.conv2d(concat, 256, [1,1], padding='VALID', stride=[1,1], bn_decay=bn_decay,
@@ -130,7 +130,7 @@ def get_model(point_cloud, input_label, is_training, cat_num, part_num, \
     net2 = tf_util.conv2d(net2, 128, [1,1], padding='VALID', stride=[1,1], bn_decay=bn_decay,
                         bn=True, is_training=is_training, scope='seg/conv3', weight_decay=weight_decay)
     net2 = tf_util.conv2d(net2, part_num, [1,1], padding='VALID', stride=[1,1], activation_fn=None, 
-                        bn=False, scope='seg/conv4', weight_decay=weight_decay)
+                        bn=False, scope='seg/conv4', weight_decay=weight_decay) # output: B*N*1*part_num
 
     net2 = tf.reshape(net2, [batch_size, num_point, part_num])
 

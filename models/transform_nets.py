@@ -7,12 +7,12 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils'))
 import tf_util
 
-def input_transform_net(point_cloud, is_training, bn_decay=None, K=3):
+def input_transform_net(point_cloud, is_training, bn_decay=None, K=3): # Only for 1st T-Net
     """ Input (XYZ) Transform Net, input is BxNx3 gray image
         Return:
             Transformation matrix of size 3xK """
-    batch_size = point_cloud.get_shape()[0].value
-    num_point = point_cloud.get_shape()[1].value
+    batch_size = point_cloud.get_shape()[0].value # B
+    num_point = point_cloud.get_shape()[1].value # N
 
     input_image = tf.expand_dims(point_cloud, -1)
     net = tf_util.conv2d(input_image, 64, [1,3],
@@ -38,18 +38,19 @@ def input_transform_net(point_cloud, is_training, bn_decay=None, K=3):
 
     with tf.variable_scope('transform_XYZ') as sc:
         assert(K==3)
-        weights = tf.get_variable('weights', [256, 3*K],
+        weights = tf.get_variable('weights', [256, 3*K], # Size 256 x 3K, reshaping to 3 x 3 occurs below
                                   initializer=tf.constant_initializer(0.0),
                                   dtype=tf.float32)
         biases = tf.get_variable('biases', [3*K],
                                  initializer=tf.constant_initializer(0.0),
                                  dtype=tf.float32)
-        biases += tf.constant([1,0,0,0,1,0,0,0,1], dtype=tf.float32)
+        biases += tf.constant([1,0,0,0,1,0,0,0,1], dtype=tf.float32) # Add identity matrix
         transform = tf.matmul(net, weights)
         transform = tf.nn.bias_add(transform, biases)
+    # 
 
     transform = tf.reshape(transform, [batch_size, 3, K])
-    return transform
+    return transform # Output: Bx3xK
 
 
 def feature_transform_net(inputs, is_training, bn_decay=None, K=64):
@@ -92,4 +93,4 @@ def feature_transform_net(inputs, is_training, bn_decay=None, K=64):
         transform = tf.nn.bias_add(transform, biases)
 
     transform = tf.reshape(transform, [batch_size, K, K])
-    return transform
+    return transform #Same but Bx64x64
