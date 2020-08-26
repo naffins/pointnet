@@ -97,12 +97,12 @@ def load_h5(h5_filename):
 def loadDataFile(filename):
     data = []
     label = []
-    with open(os.path.join("data",name)+".ply","rb") as f:
+    with open(os.path.join("data",filename)+".ply","rb") as f:
         plydata = plyfile.PlyData.read(f)
     for i in range(plydata["vertex"].count):
         data.append(list(plydata["vertex"][i]))
     data = np.array(data)
-    with open(os.path.join(dirname,name)+".labels","r") as f:
+    with open(os.path.join("data",filename)+".labels","r") as f:
         label = list(map(int,f.read().split()))
     label = np.array(label)
     # Output is ((NxC),(N))
