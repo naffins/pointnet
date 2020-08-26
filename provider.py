@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import h5py
+import plyfile
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
@@ -94,7 +95,18 @@ def load_h5(h5_filename):
     return (data, label)
 
 def loadDataFile(filename):
-    return load_h5(filename)
+    data = []
+    label = []
+    with open(os.path.join("data",name)+".ply","rb") as f:
+        plydata = plyfile.PlyData.read(f)
+    for i in range(plydata["vertex"].count):
+        data.append(list(plydata["vertex"][i]))
+    data = np.array(data)
+    with open(os.path.join(dirname,name)+".labels","r") as f:
+        label = list(map(int,f.read().split()))
+    label = np.array(label)
+    # Output is ((NxC),(N))
+    return (data, label)
 
 def load_h5_data_label_seg(h5_filename):
     f = h5py.File(h5_filename)

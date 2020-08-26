@@ -28,7 +28,7 @@ parser.add_argument('--momentum', type=float, default=0.9, help='Initial learnin
 parser.add_argument('--optimizer', default='adam', help='adam or momentum [default: adam]')
 parser.add_argument('--decay_step', type=int, default=300000, help='Decay step for lr decay [default: 300000]')
 parser.add_argument('--decay_rate', type=float, default=0.5, help='Decay rate for lr decay [default: 0.5]')
-parser.add_argument('--test_area', type=int, default=6, help='Which area to use for test, option: 1-6 [default: 6]')
+#parser.add_argument('--test_area', type=int, default=6, help='Which area to use for test, option: 1-6 [default: 6]')
 FLAGS = parser.parse_args()
 
 # Declare constants
@@ -59,39 +59,43 @@ NUM_CLASSES = 13
 BN_INIT_DECAY = 0.5
 BN_DECAY_DECAY_RATE = 0.5
 #BN_DECAY_DECAY_STEP = float(DECAY_STEP * 2)
-BN_DECAY_DECAY_STEP = float(DECAY_STEP)
+BN_DECAY_DECAY_STEP = 500000
 BN_DECAY_CLIP = 0.99
 
 HOSTNAME = socket.gethostname()
 
-ALL_FILES = provider.getDataFiles('indoor3d_sem_seg_hdf5_data/all_files.txt') # filename list
-room_filelist = [line.rstrip() for line in open('indoor3d_sem_seg_hdf5_data/room_filelist.txt')] # room names (for train/test sorting)
+TRAIN_FILES = provider.getDataFiles('data/train_data.txt')
+TEST_FILES = provider.getDataFiles('data/test_data.txt') # filename list
+#room_filelist = [line.rstrip() for line in open('indoor3d_sem_seg_hdf5_data/room_filelist.txt')] # room names (for train/test sorting)
 
 # Load data and labels from ALL_FILES
-data_batch_list = []
-label_batch_list = []
-for h5_filename in ALL_FILES:
-    data_batch, label_batch = provider.loadDataFile(h5_filename)
-    data_batch_list.append(data_batch)
-    label_batch_list.append(label_batch)
-data_batches = np.concatenate(data_batch_list, 0) # fuse along axis 0
-label_batches = np.concatenate(label_batch_list, 0)
-print(data_batches.shape)
-print(label_batches.shape)
+train_data_batch_list = []
+train_label_batch_list = []
+for filename in TRAIN_FILES:
+    data_batch, label_batch = provider.loadDataFile(filename)
+    train_data_batch_list.append(data_batch)
+    train_label_batch_list.append(label_batch)
+train_data = np.array(train_data_batch_list) # fuse along axis 0
+train_label = np.array(train_label_batch_list)
+print(train_data.shape)
+print(train_label.shape)
+del train_data_batch_list
+del train_label_batch_list
 
-test_area = 'Area_'+str(FLAGS.test_area)
-train_idxs = []
-test_idxs = []
-for i,room_name in enumerate(room_filelist):
-    if test_area in room_name:
-        test_idxs.append(i)
-    else:
-        train_idxs.append(i)
+test_data_batch_list = []
+test_label_batch_list = []
+for filename in TEST_FILES:
+    data_batch, label_batch = provider.loadDataFile(filename)
+    test_data_batch_list.append(data_batch)
+    test_label_batch_list.append(label_batch)
+test_data = np.array(test_data_batch_list) # fuse along axis 0
+test_label = np.array(test_label_batch_list)
+print(test_data.shape)
+print(test_label.shape)
+del test_data_batch_list
+del test_label_batch_list
 
-train_data = data_batches[train_idxs,...]
-train_label = label_batches[train_idxs]
-test_data = data_batches[test_idxs,...]
-test_label = label_batches[test_idxs]
+
 print(train_data.shape, train_label.shape)
 print(test_data.shape, test_label.shape)
 
@@ -205,7 +209,7 @@ def train_one_epoch(sess, ops, train_writer):
     
     # Shuffle data
     log_string('----')
-    current_data, current_label, _ = provider.shuffle_data(train_data[:,0:NUM_POINT,:], train_label) 
+    current_data, current_label, _ = provider.shuffle_data(train_data, train_label) 
     
     file_size = current_data.shape[0] # Number of samples
     num_batches = file_size // BATCH_SIZE
